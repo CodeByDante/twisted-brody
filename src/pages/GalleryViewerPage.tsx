@@ -467,7 +467,7 @@ export default function GalleryViewerPage() {
           const xhr = new XMLHttpRequest();
           const formData = new FormData();
           formData.append('image', file);
-          formData.append('key', 'd25df7d923060d17a21f470b6e95386c');
+          formData.append('key', '69a63ae97b7ae6fe8ff551b2ae5be86e');
 
           xhr.upload.addEventListener('progress', (event) => {
             if (event.lengthComputable) {
