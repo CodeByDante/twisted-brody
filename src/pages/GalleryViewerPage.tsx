@@ -294,15 +294,92 @@ export default function GalleryViewerPage() {
       if (!id) return;
       
       try {
-        const docRef = doc(db, 'galleries', id);
-        const docSnap = await getDoc(docRef);
-        
-        if (docSnap.exists()) {
-          setGallery(docSnap.data() as Gallery);
+  const uploadedUrls: string[] = [];
+
+  for (let index = 0; index < files.length; index++) {
+    const file = files[index];
+
+    const xhr = new XMLHttpRequest();
+    const formData = new FormData();
+    formData.append('image', file);
+    formData.append('key', '3b5b5605ac5c1676c75cfc907c47eb58');
+
+    const url = await new Promise<string | null>((resolve) => {
+      xhr.upload.addEventListener('progress', (event) => {
+        if (event.lengthComputable) {
+          const progress = (event.loaded / event.total) * 100;
+          setUploadProgress((prev) => {
+            const updated = [...prev];
+            updated[index] = { ...updated[index], progress, status: 'uploading' };
+            const totalProgress = updated.reduce((acc, curr) => acc + curr.progress, 0);
+            setOverallProgress(totalProgress / updated.length);
+            return updated;
+          });
         }
-      } catch (error) {
-        console.error('Error loading gallery:', error);
-      } finally {
+      });
+
+      xhr.onload = () => {
+        if (xhr.status === 200) {
+          const response = JSON.parse(xhr.responseText);
+          if (response.data?.url) {
+            setUploadProgress((prev) => {
+              const updated = [...prev];
+              updated[index] = { ...updated[index], status: 'completed', progress: 100 };
+              return updated;
+            });
+            resolve(response.data.url);
+          } else {
+            setUploadProgress((prev) => {
+              const updated = [...prev];
+              updated[index] = { ...updated[index], status: 'error' };
+              return updated;
+            });
+            resolve(null);
+          }
+        } else {
+          setUploadProgress((prev) => {
+            const updated = [...prev];
+            updated[index] = { ...updated[index], status: 'error' };
+            return updated;
+          });
+          resolve(null);
+        }
+      };
+
+      xhr.onerror = () => {
+        setUploadProgress((prev) => {
+          const updated = [...prev];
+          updated[index] = { ...updated[index], status: 'error' };
+          return updated;
+        });
+        resolve(null);
+      };
+
+      xhr.open('POST', 'https://api.imgbb.com/1/upload');
+      xhr.send(formData);
+    });
+
+    if (url) {
+      uploadedUrls.push(url);
+    }
+  }
+
+  const validUrls = uploadedUrls.filter((url) => url !== null);
+
+  if (validUrls.length > 0) {
+    const updatedImages = [...gallery.images, ...validUrls];
+    const galleryRef = doc(db, 'galleries', gallery.id);
+    await updateDoc(galleryRef, { images: updatedImages });
+    setGallery((prev) => (prev ? { ...prev, images: updatedImages } : null));
+  }
+
+  if (fileInputRef.current) {
+    fileInputRef.current.value = '';
+  }
+} catch (error) {
+  console.error('Error uploading images:', error);
+  alert('Error al subir las imágenes. Por favor, inténtalo de nuevo.');
+} finally {
         setIsLoading(false);
       }
     };
@@ -346,36 +423,92 @@ export default function GalleryViewerPage() {
     setZipProgress(0);
     
     try {
-      const zip = new JSZip();
-      const folder = zip.folder(gallery.name);
-      
-      for (let i = 0; i < gallery.images.length; i++) {
-        const imageUrl = gallery.images[i];
-        try {
-          const blob = await convertToFormat(imageUrl, downloadFormat);
-          const extension = downloadFormat === 'original' ? 
-            (imageUrl.includes('.png') ? 'png' : 'jpg') : 
-            downloadFormat;
-          folder?.file(`imagen_${i + 1}.${extension}`, blob);
-          setZipProgress(((i + 1) / gallery.images.length) * 100);
-        } catch (error) {
-          console.error(`Error processing image ${i + 1}:`, error);
+  const uploadedUrls: string[] = [];
+
+  for (let index = 0; index < files.length; index++) {
+    const file = files[index];
+
+    const xhr = new XMLHttpRequest();
+    const formData = new FormData();
+    formData.append('image', file);
+    formData.append('key', '3b5b5605ac5c1676c75cfc907c47eb58');
+
+    const url = await new Promise<string | null>((resolve) => {
+      xhr.upload.addEventListener('progress', (event) => {
+        if (event.lengthComputable) {
+          const progress = (event.loaded / event.total) * 100;
+          setUploadProgress((prev) => {
+            const updated = [...prev];
+            updated[index] = { ...updated[index], progress, status: 'uploading' };
+            const totalProgress = updated.reduce((acc, curr) => acc + curr.progress, 0);
+            setOverallProgress(totalProgress / updated.length);
+            return updated;
+          });
         }
-      }
-      
-      const content = await zip.generateAsync({ type: 'blob' });
-      const url = URL.createObjectURL(content);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${gallery.name}.zip`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error('Error creating ZIP:', error);
-      alert('Error al crear el archivo ZIP');
-    } finally {
+      });
+
+      xhr.onload = () => {
+        if (xhr.status === 200) {
+          const response = JSON.parse(xhr.responseText);
+          if (response.data?.url) {
+            setUploadProgress((prev) => {
+              const updated = [...prev];
+              updated[index] = { ...updated[index], status: 'completed', progress: 100 };
+              return updated;
+            });
+            resolve(response.data.url);
+          } else {
+            setUploadProgress((prev) => {
+              const updated = [...prev];
+              updated[index] = { ...updated[index], status: 'error' };
+              return updated;
+            });
+            resolve(null);
+          }
+        } else {
+          setUploadProgress((prev) => {
+            const updated = [...prev];
+            updated[index] = { ...updated[index], status: 'error' };
+            return updated;
+          });
+          resolve(null);
+        }
+      };
+
+      xhr.onerror = () => {
+        setUploadProgress((prev) => {
+          const updated = [...prev];
+          updated[index] = { ...updated[index], status: 'error' };
+          return updated;
+        });
+        resolve(null);
+      };
+
+      xhr.open('POST', 'https://api.imgbb.com/1/upload');
+      xhr.send(formData);
+    });
+
+    if (url) {
+      uploadedUrls.push(url);
+    }
+  }
+
+  const validUrls = uploadedUrls.filter((url) => url !== null);
+
+  if (validUrls.length > 0) {
+    const updatedImages = [...gallery.images, ...validUrls];
+    const galleryRef = doc(db, 'galleries', gallery.id);
+    await updateDoc(galleryRef, { images: updatedImages });
+    setGallery((prev) => (prev ? { ...prev, images: updatedImages } : null));
+  }
+
+  if (fileInputRef.current) {
+    fileInputRef.current.value = '';
+  }
+} catch (error) {
+  console.error('Error uploading images:', error);
+  alert('Error al subir las imágenes. Por favor, inténtalo de nuevo.');
+} finally {
       setIsDownloadingZip(false);
       setZipProgress(0);
     }
@@ -388,63 +521,92 @@ export default function GalleryViewerPage() {
     setPdfProgress(0);
     
     try {
-      const pdf = new jsPDF();
-      let isFirstPage = true;
-      
-      for (let i = 0; i < gallery.images.length; i++) {
-        const imageUrl = gallery.images[i];
-        
-        try {
-          const img = new Image();
-          img.crossOrigin = 'anonymous';
-          
-          await new Promise((resolve, reject) => {
-            img.onload = resolve;
-            img.onerror = reject;
-            img.src = imageUrl;
+  const uploadedUrls: string[] = [];
+
+  for (let index = 0; index < files.length; index++) {
+    const file = files[index];
+
+    const xhr = new XMLHttpRequest();
+    const formData = new FormData();
+    formData.append('image', file);
+    formData.append('key', '3b5b5605ac5c1676c75cfc907c47eb58');
+
+    const url = await new Promise<string | null>((resolve) => {
+      xhr.upload.addEventListener('progress', (event) => {
+        if (event.lengthComputable) {
+          const progress = (event.loaded / event.total) * 100;
+          setUploadProgress((prev) => {
+            const updated = [...prev];
+            updated[index] = { ...updated[index], progress, status: 'uploading' };
+            const totalProgress = updated.reduce((acc, curr) => acc + curr.progress, 0);
+            setOverallProgress(totalProgress / updated.length);
+            return updated;
           });
-          
-          if (!isFirstPage) {
-            pdf.addPage();
-          }
-          isFirstPage = false;
-          
-          const canvas = document.createElement('canvas');
-          const ctx = canvas.getContext('2d')!;
-          canvas.width = img.width;
-          canvas.height = img.height;
-          ctx.drawImage(img, 0, 0);
-          
-          const imgData = canvas.toDataURL('image/jpeg', 0.8);
-          const pdfWidth = pdf.internal.pageSize.getWidth();
-          const pdfHeight = pdf.internal.pageSize.getHeight();
-          const imgAspectRatio = img.width / img.height;
-          const pdfAspectRatio = pdfWidth / pdfHeight;
-          
-          let finalWidth, finalHeight;
-          if (imgAspectRatio > pdfAspectRatio) {
-            finalWidth = pdfWidth;
-            finalHeight = pdfWidth / imgAspectRatio;
-          } else {
-            finalHeight = pdfHeight;
-            finalWidth = pdfHeight * imgAspectRatio;
-          }
-          
-          const x = (pdfWidth - finalWidth) / 2;
-          const y = (pdfHeight - finalHeight) / 2;
-          
-          pdf.addImage(imgData, 'JPEG', x, y, finalWidth, finalHeight);
-          setPdfProgress(((i + 1) / gallery.images.length) * 100);
-        } catch (error) {
-          console.error(`Error processing image ${i + 1}:`, error);
         }
-      }
-      
-      pdf.save(`${gallery.name}.pdf`);
-    } catch (error) {
-      console.error('Error creating PDF:', error);
-      alert('Error al crear el archivo PDF');
-    } finally {
+      });
+
+      xhr.onload = () => {
+        if (xhr.status === 200) {
+          const response = JSON.parse(xhr.responseText);
+          if (response.data?.url) {
+            setUploadProgress((prev) => {
+              const updated = [...prev];
+              updated[index] = { ...updated[index], status: 'completed', progress: 100 };
+              return updated;
+            });
+            resolve(response.data.url);
+          } else {
+            setUploadProgress((prev) => {
+              const updated = [...prev];
+              updated[index] = { ...updated[index], status: 'error' };
+              return updated;
+            });
+            resolve(null);
+          }
+        } else {
+          setUploadProgress((prev) => {
+            const updated = [...prev];
+            updated[index] = { ...updated[index], status: 'error' };
+            return updated;
+          });
+          resolve(null);
+        }
+      };
+
+      xhr.onerror = () => {
+        setUploadProgress((prev) => {
+          const updated = [...prev];
+          updated[index] = { ...updated[index], status: 'error' };
+          return updated;
+        });
+        resolve(null);
+      };
+
+      xhr.open('POST', 'https://api.imgbb.com/1/upload');
+      xhr.send(formData);
+    });
+
+    if (url) {
+      uploadedUrls.push(url);
+    }
+  }
+
+  const validUrls = uploadedUrls.filter((url) => url !== null);
+
+  if (validUrls.length > 0) {
+    const updatedImages = [...gallery.images, ...validUrls];
+    const galleryRef = doc(db, 'galleries', gallery.id);
+    await updateDoc(galleryRef, { images: updatedImages });
+    setGallery((prev) => (prev ? { ...prev, images: updatedImages } : null));
+  }
+
+  if (fileInputRef.current) {
+    fileInputRef.current.value = '';
+  }
+} catch (error) {
+  console.error('Error uploading images:', error);
+  alert('Error al subir las imágenes. Por favor, inténtalo de nuevo.');
+} finally {
       setIsDownloadingPdf(false);
       setPdfProgress(0);
     }
@@ -462,96 +624,92 @@ export default function GalleryViewerPage() {
     })));
 
     try {
-      const uploadPromises = files.map((file, index) => {
-        return new Promise<string | null>((resolve) => {
-          const xhr = new XMLHttpRequest();
-          const formData = new FormData();
-          formData.append('image', file);
-          formData.append('key', '3b5b5605ac5c1676c75cfc907c47eb58');
+  const uploadedUrls: string[] = [];
 
-          xhr.upload.addEventListener('progress', (event) => {
-            if (event.lengthComputable) {
-              const progress = (event.loaded / event.total) * 100;
-              setUploadProgress(prev => {
-                const updated = [...prev];
-                updated[index] = { ...updated[index], progress, status: 'uploading' };
-                return updated;
-              });
-              
-              // Update overall progress
-              setUploadProgress(prev => {
-                const totalProgress = prev.reduce((acc, curr) => acc + curr.progress, 0);
-                const overallPercent = totalProgress / prev.length;
-                setOverallProgress(overallPercent);
-                return prev;
-              });
-            }
+  for (let index = 0; index < files.length; index++) {
+    const file = files[index];
+
+    const xhr = new XMLHttpRequest();
+    const formData = new FormData();
+    formData.append('image', file);
+    formData.append('key', '3b5b5605ac5c1676c75cfc907c47eb58');
+
+    const url = await new Promise<string | null>((resolve) => {
+      xhr.upload.addEventListener('progress', (event) => {
+        if (event.lengthComputable) {
+          const progress = (event.loaded / event.total) * 100;
+          setUploadProgress((prev) => {
+            const updated = [...prev];
+            updated[index] = { ...updated[index], progress, status: 'uploading' };
+            const totalProgress = updated.reduce((acc, curr) => acc + curr.progress, 0);
+            setOverallProgress(totalProgress / updated.length);
+            return updated;
           });
+        }
+      });
 
-          xhr.onload = () => {
-            if (xhr.status === 200) {
-              const response = JSON.parse(xhr.responseText);
-              if (response.data?.url) {
-                setUploadProgress(prev => {
-                  const updated = [...prev];
-                  updated[index] = { ...updated[index], status: 'completed', progress: 100 };
-                  return updated;
-                });
-                resolve(response.data.url);
-              } else {
-                setUploadProgress(prev => {
-                  const updated = [...prev];
-                  updated[index] = { ...updated[index], status: 'error' };
-                  return updated;
-                });
-                resolve(null);
-              }
-            } else {
-              setUploadProgress(prev => {
-                const updated = [...prev];
-                updated[index] = { ...updated[index], status: 'error' };
-                return updated;
-              });
-              resolve(null);
-            }
-          };
-
-          xhr.onerror = () => {
-            setUploadProgress(prev => {
+      xhr.onload = () => {
+        if (xhr.status === 200) {
+          const response = JSON.parse(xhr.responseText);
+          if (response.data?.url) {
+            setUploadProgress((prev) => {
+              const updated = [...prev];
+              updated[index] = { ...updated[index], status: 'completed', progress: 100 };
+              return updated;
+            });
+            resolve(response.data.url);
+          } else {
+            setUploadProgress((prev) => {
               const updated = [...prev];
               updated[index] = { ...updated[index], status: 'error' };
               return updated;
             });
             resolve(null);
-          };
+          }
+        } else {
+          setUploadProgress((prev) => {
+            const updated = [...prev];
+            updated[index] = { ...updated[index], status: 'error' };
+            return updated;
+          });
+          resolve(null);
+        }
+      };
 
-          xhr.open('POST', 'https://api.imgbb.com/1/upload');
-          xhr.send(formData);
+      xhr.onerror = () => {
+        setUploadProgress((prev) => {
+          const updated = [...prev];
+          updated[index] = { ...updated[index], status: 'error' };
+          return updated;
         });
-      });
+        resolve(null);
+      };
 
-      const uploadedUrls = await Promise.all(uploadPromises);
-      const validUrls = uploadedUrls.filter((url): url is string => url !== null);
+      xhr.open('POST', 'https://api.imgbb.com/1/upload');
+      xhr.send(formData);
+    });
 
-      if (validUrls.length > 0) {
-        const updatedImages = [...gallery.images, ...validUrls];
-        
-        // Update gallery in database
-        const galleryRef = doc(db, 'galleries', gallery.id);
-        await updateDoc(galleryRef, { images: updatedImages });
-        
-        // Update local state
-        setGallery(prev => prev ? { ...prev, images: updatedImages } : null);
-      }
+    if (url) {
+      uploadedUrls.push(url);
+    }
+  }
 
-      // Reset file input
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
-    } catch (error) {
-      console.error('Error uploading images:', error);
-      alert('Error al subir las imágenes. Por favor, inténtalo de nuevo.');
-    } finally {
+  const validUrls = uploadedUrls.filter((url) => url !== null);
+
+  if (validUrls.length > 0) {
+    const updatedImages = [...gallery.images, ...validUrls];
+    const galleryRef = doc(db, 'galleries', gallery.id);
+    await updateDoc(galleryRef, { images: updatedImages });
+    setGallery((prev) => (prev ? { ...prev, images: updatedImages } : null));
+  }
+
+  if (fileInputRef.current) {
+    fileInputRef.current.value = '';
+  }
+} catch (error) {
+  console.error('Error uploading images:', error);
+  alert('Error al subir las imágenes. Por favor, inténtalo de nuevo.');
+} finally {
       setIsUploading(false);
       setUploadProgress([]);
       setOverallProgress(0);
