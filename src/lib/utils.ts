@@ -35,7 +35,7 @@ export async function uploadToImgBB(file: File): Promise<string | null> {
 
     const formData = new FormData();
     formData.append('image', file);
-    formData.append('key', '53ff3b83822d71b6698ea1868ee765d5');
+    formData.append('key', '3b5b5605ac5c1676c75cfc907c47eb58');
 
     const response = await fetch(API_CONFIG.IMGBB.BASE_URL, {
       method: 'POST',
