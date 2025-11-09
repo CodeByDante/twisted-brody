@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { X, Plus, Loader2, Book, Trash2, Edit2, ChevronDown, ChevronUp, Search, Check } from 'lucide-react';
 import { useStore } from '../lib/store';
 import { uploadToImgBB } from '../lib/utils';
@@ -14,8 +14,16 @@ interface MangaFormProps {
   submitText: string;
 }
 
-interface UploadProgress {
+interface SelectedImage {
+  id: string;
   file: File;
+  previewUrl: string;
+}
+
+interface UploadProgress {
+  id: string;
+  fileName: string;
+  fileSize: number;
   progress: number;
   status: 'pending' | 'uploading' | 'completed' | 'error';
 }
@@ -43,7 +51,7 @@ export default function MangaForm({
   const [versions, setVersions] = useState<MangaVersion[]>(
     initialData?.versions || [{ id: crypto.randomUUID(), name: 'Versión 1', pages: [], isDefault: true }]
   );
-  const [selectedImages, setSelectedImages] = useState<{ [versionId: string]: File[] }>({});
+  const [selectedImages, setSelectedImages] = useState<{ [versionId: string]: SelectedImage[] }>({});
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState<{ [versionId: string]: UploadProgress[] }>({});
@@ -62,34 +70,108 @@ export default function MangaForm({
 
   const mangaCategories = categories.filter(c => c.type === 'manga');
 
+  const selectedImagesRef = useRef(selectedImages);
+
+  useEffect(() => {
+    selectedImagesRef.current = selectedImages;
+  }, [selectedImages]);
+
+  useEffect(() => {
+    return () => {
+      Object.values(selectedImagesRef.current).forEach(images => {
+        images.forEach(image => URL.revokeObjectURL(image.previewUrl));
+      });
+    };
+  }, []);
+
+  const recalculateOverallProgress = (progressMap: { [versionId: string]: UploadProgress[] }) => {
+    const allItems = Object.values(progressMap).flat();
+    if (allItems.length === 0) {
+      setOverallProgress(0);
+      return;
+    }
+
+    const total = allItems.reduce((sum, item) => sum + item.progress, 0);
+    setOverallProgress(total / allItems.length);
+  };
+
+  const updateProgressState = (
+    updater: (prev: { [versionId: string]: UploadProgress[] }) => { [versionId: string]: UploadProgress[] }
+  ) => {
+    setUploadProgress(prev => {
+      const updated = updater(prev);
+      recalculateOverallProgress(updated);
+      return updated;
+    });
+  };
+
+  const setProgressForItem = (versionId: string, index: number, partial: Partial<UploadProgress>) => {
+    updateProgressState(prev => {
+      const versionProgress = [...(prev[versionId] || [])];
+      if (versionProgress[index]) {
+        versionProgress[index] = { ...versionProgress[index], ...partial };
+      }
+      return {
+        ...prev,
+        [versionId]: versionProgress
+      };
+    });
+  };
+
+  useEffect(() => {
+    if (!coverImagePreview || !coverImagePreview.startsWith('blob:')) {
+      return;
+    }
+
+    return () => {
+      URL.revokeObjectURL(coverImagePreview);
+    };
+  }, [coverImagePreview]);
+
   const handleCoverImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       setCoverImageFile(file);
+      if (coverImagePreview && coverImagePreview.startsWith('blob:')) {
+        URL.revokeObjectURL(coverImagePreview);
+      }
       const preview = URL.createObjectURL(file);
       setCoverImagePreview(preview);
     }
   };
 
   const handleRemoveCoverImage = () => {
+    if (coverImagePreview && coverImagePreview.startsWith('blob:')) {
+      URL.revokeObjectURL(coverImagePreview);
+    }
     setCoverImageFile(null);
     setCoverImagePreview(null);
   };
 
   const handleImageSelect = (versionId: string, e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
-    setSelectedImages(prev => ({
-      ...prev,
-      [versionId]: [...(prev[versionId] || []), ...files]
+    if (files.length === 0) return;
+
+    const preparedImages: SelectedImage[] = files.map(file => ({
+      id: crypto.randomUUID(),
+      file,
+      previewUrl: URL.createObjectURL(file)
     }));
 
-    // Initialize progress for new files
-    const newProgress: UploadProgress[] = files.map(file => ({
-      file,
+    setSelectedImages(prev => ({
+      ...prev,
+      [versionId]: [...(prev[versionId] || []), ...preparedImages]
+    }));
+
+    const newProgress: UploadProgress[] = preparedImages.map(image => ({
+      id: image.id,
+      fileName: image.file.name,
+      fileSize: image.file.size,
       progress: 0,
       status: 'pending'
     }));
-    setUploadProgress(prev => ({
+
+    updateProgressState(prev => ({
       ...prev,
       [versionId]: [...(prev[versionId] || []), ...newProgress]
     }));
@@ -105,11 +187,25 @@ export default function MangaForm({
       ));
     } else {
       // Remove from new selected images
-      setSelectedImages(prev => ({
-        ...prev,
-        [versionId]: (prev[versionId] || []).filter((_, i) => i !== index)
-      }));
-      setUploadProgress(prev => ({
+      setSelectedImages(prev => {
+        const current = prev[versionId] || [];
+        const imageToRemove = current[index];
+        if (imageToRemove) {
+          URL.revokeObjectURL(imageToRemove.previewUrl);
+          if (coverImagePreview === imageToRemove.previewUrl && coverImageFile === imageToRemove.file) {
+            setCoverImagePreview(null);
+            setCoverImageFile(null);
+            setSelectedCoverPageIndex(null);
+          }
+        }
+
+        return {
+          ...prev,
+          [versionId]: current.filter((_, i) => i !== index)
+        };
+      });
+
+      updateProgressState(prev => ({
         ...prev,
         [versionId]: (prev[versionId] || []).filter((_, i) => i !== index)
       }));
@@ -164,9 +260,9 @@ export default function MangaForm({
       // Handle selection from new uploads
       const newImages = selectedImages[versionId];
       if (newImages && newImages[pageIndex]) {
-        const previewUrl = URL.createObjectURL(newImages[pageIndex]);
-        setCoverImagePreview(previewUrl);
-        setCoverImageFile(newImages[pageIndex]);
+        const image = newImages[pageIndex];
+        setCoverImagePreview(image.previewUrl);
+        setCoverImageFile(image.file);
         setSelectedCoverPageIndex({ versionId, pageIndex: -1 });
       }
     } else {
@@ -220,6 +316,7 @@ export default function MangaForm({
     setSelectedImages(prev => {
       const versionImages = [...(prev[versionId] || [])];
       const [movedImage] = versionImages.splice(fromIndex, 1);
+      if (!movedImage) return prev;
       versionImages.splice(toIndex, 0, movedImage);
       return {
         ...prev,
@@ -227,9 +324,10 @@ export default function MangaForm({
       };
     });
 
-    setUploadProgress(prev => {
+    updateProgressState(prev => {
       const versionProgress = [...(prev[versionId] || [])];
       const [movedProgress] = versionProgress.splice(fromIndex, 1);
+      if (!movedProgress) return prev;
       versionProgress.splice(toIndex, 0, movedProgress);
       return {
         ...prev,
@@ -277,10 +375,13 @@ export default function MangaForm({
     setVersions(prev => prev.filter(v => v.id !== versionId));
     setSelectedImages(prev => {
       const updated = { ...prev };
-      delete updated[versionId];
+      if (updated[versionId]) {
+        updated[versionId].forEach(image => URL.revokeObjectURL(image.previewUrl));
+        delete updated[versionId];
+      }
       return updated;
     });
-    setUploadProgress(prev => {
+    updateProgressState(prev => {
       const updated = { ...prev };
       delete updated[versionId];
       return updated;
@@ -298,28 +399,6 @@ export default function MangaForm({
       ...v,
       isDefault: v.id === versionId
     })));
-  };
-
-  const updateProgress = (versionId: string, index: number, progress: number) => {
-    setUploadProgress(prev => ({
-      ...prev,
-      [versionId]: (prev[versionId] || []).map((item, i) => 
-        i === index ? { ...item, progress, status: 'uploading' } : item
-      )
-    }));
-
-    // Calculate overall progress after state update
-    setTimeout(() => {
-      setUploadProgress(current => {
-        const allProgress = Object.values(current).flat();
-        if (allProgress.length > 0) {
-          const totalProgress = allProgress.reduce((acc, curr) => acc + curr.progress, 0);
-          const overallPercent = totalProgress / allProgress.length;
-          setOverallProgress(overallPercent);
-        }
-        return current;
-      });
-    }, 0);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -355,11 +434,17 @@ export default function MangaForm({
       for (const version of versions) {
         const versionImages = selectedImages[version.id] || [];
         const existingPages = version.pages || [];
-        
+
         if (versionImages.length > 0) {
           // Upload new images for this version
-          const uploadPromises = versionImages.map((file, index) => {
-            return new Promise<string | null>((resolve) => {
+          const uploadResults: (string | null)[] = [];
+
+          for (let index = 0; index < versionImages.length; index++) {
+            const { file } = versionImages[index];
+
+            setProgressForItem(version.id, index, { status: 'uploading', progress: 0 });
+
+            const url = await new Promise<string | null>((resolve) => {
               const xhr = new XMLHttpRequest();
               const formData = new FormData();
               formData.append('image', file);
@@ -368,7 +453,7 @@ export default function MangaForm({
               xhr.upload.addEventListener('progress', (event) => {
                 if (event.lengthComputable) {
                   const progress = (event.loaded / event.total) * 100;
-                  updateProgress(version.id, index, progress);
+                  setProgressForItem(version.id, index, { progress, status: 'uploading' });
                 }
               });
 
@@ -376,55 +461,75 @@ export default function MangaForm({
                 if (xhr.status === 200) {
                   const response = JSON.parse(xhr.responseText);
                   if (response.data?.url) {
-                    setUploadProgress(prev => ({
-                      ...prev,
-                      [version.id]: (prev[version.id] || []).map((item, i) => 
-                        i === index ? { ...item, status: 'completed', progress: 100 } : item
-                      )
-                    }));
+                    setProgressForItem(version.id, index, { status: 'completed', progress: 100 });
                     resolve(response.data.url);
-                  } else {
-                    setUploadProgress(prev => ({
-                      ...prev,
-                      [version.id]: (prev[version.id] || []).map((item, i) => 
-                        i === index ? { ...item, status: 'error' } : item
-                      )
-                    }));
-                    resolve(null);
+                    return;
                   }
-                } else {
-                  setUploadProgress(prev => ({
-                    ...prev,
-                    [version.id]: (prev[version.id] || []).map((item, i) => 
-                      i === index ? { ...item, status: 'error' } : item
-                    )
-                  }));
-                  resolve(null);
                 }
+
+                setProgressForItem(version.id, index, { status: 'error' });
+                resolve(null);
               };
 
               xhr.onerror = () => {
-                setUploadProgress(prev => ({
-                  ...prev,
-                  [version.id]: (prev[version.id] || []).map((item, i) => 
-                    i === index ? { ...item, status: 'error' } : item
-                  )
-                }));
+                setProgressForItem(version.id, index, { status: 'error' });
                 resolve(null);
               };
 
               xhr.open('POST', API_CONFIG.IMGBB.BASE_URL);
               xhr.send(formData);
             });
-          });
 
-          const uploadedUrls = await Promise.all(uploadPromises);
-          const validUrls = uploadedUrls.filter((url): url is string => url !== null);
-          
+            uploadResults[index] = url;
+          }
+
+          const validUrls = uploadResults.filter((url): url is string => url !== null);
+
           updatedVersions.push({
             ...version,
             pages: [...existingPages, ...validUrls]
           });
+
+          if (uploadResults.length > 0) {
+            setSelectedImages(prev => {
+              const updated = { ...prev };
+              const imagesForVersion = updated[version.id];
+              if (imagesForVersion) {
+                const remainingImages: SelectedImage[] = [];
+                imagesForVersion.forEach((image, idx) => {
+                  if (uploadResults[idx]) {
+                    URL.revokeObjectURL(image.previewUrl);
+                  } else {
+                    remainingImages.push(image);
+                  }
+                });
+
+                if (remainingImages.length > 0) {
+                  updated[version.id] = remainingImages;
+                } else {
+                  delete updated[version.id];
+                }
+              }
+              return updated;
+            });
+
+            updateProgressState(prev => {
+              const current = prev[version.id] || [];
+              if (current.length === 0) return prev;
+
+              const remaining = current.filter((_, idx) => !uploadResults[idx]);
+
+              if (remaining.length > 0) {
+                return {
+                  ...prev,
+                  [version.id]: remaining
+                };
+              }
+
+              const { [version.id]: _removed, ...rest } = prev;
+              return rest;
+            });
+          }
         } else {
           // Keep existing pages if no new images
           updatedVersions.push({
@@ -455,7 +560,7 @@ export default function MangaForm({
     } finally {
       setIsUploading(false);
       setOverallProgress(0);
-      setUploadProgress({});
+      updateProgressState(() => ({}));
     }
   };
 
@@ -907,13 +1012,13 @@ export default function MangaForm({
                         Nuevas Páginas ({selectedImages[version.id].length}) - Arrastra para reordenar
                       </h5>
                       <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2">
-                        {selectedImages[version.id].map((file, index) => {
-                          const previewUrl = URL.createObjectURL(file);
+                        {selectedImages[version.id].map((image, index) => {
+                          const { previewUrl, file, id } = image;
                           const isSelectedAsCover = coverImagePreview === previewUrl || (selectedCoverPageIndex?.versionId === version.id && selectedCoverPageIndex?.pageIndex === -1 && coverImageFile === file);
 
                           return (
                             <div
-                              key={index}
+                              key={id}
                               className={`relative aspect-[2/3] group cursor-move transition-all ${
                                 dragOverNewImageIndex === index ? 'scale-105 ring-2 ring-primary' : ''
                               } ${
