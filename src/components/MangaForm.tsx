@@ -66,7 +66,7 @@ export default function MangaForm({
     const file = e.target.files?.[0];
     if (file) {
       setCoverImageFile(file);
-      const preview = URL.createObjectURL(file);
+      const preview = (file instanceof File ? (file instanceof File ? URL.createObjectURL(file) : file) : file);
       setCoverImagePreview(preview);
     }
   };
@@ -358,67 +358,64 @@ export default function MangaForm({
         
         if (versionImages.length > 0) {
           // Upload new images for this version
-          const uploadPromises = versionImages.map((file, index) => {
-            return new Promise<string | null>((resolve) => {
-              const xhr = new XMLHttpRequest();
-              const formData = new FormData();
-              formData.append('image', file);
-              formData.append('key', API_CONFIG.IMGBB.API_KEY);
+          for (let index = 0; index < versionImages.length; index++) {
+    const file = versionImages[index];
+    await new Promise<string | null>((resolve) => {
+      const xhr = new XMLHttpRequest();
+      const formData = new FormData();
+      formData.append('image', file);
+      formData.append('key', API_CONFIG.IMGBB.API_KEY);
 
-              xhr.upload.addEventListener('progress', (event) => {
-                if (event.lengthComputable) {
-                  const progress = (event.loaded / event.total) * 100;
-                  updateProgress(version.id, index, progress);
-                }
-              });
+      xhr.upload.addEventListener('progress', (event) => {
+        if (event.lengthComputable) {
+          const progress = (event.loaded / event.total) * 100;
+          updateProgress(version.id, index, progress);
+        }
+      });
 
-              xhr.onload = () => {
-                if (xhr.status === 200) {
-                  const response = JSON.parse(xhr.responseText);
-                  if (response.data?.url) {
-                    setUploadProgress(prev => ({
-                      ...prev,
-                      [version.id]: (prev[version.id] || []).map((item, i) => 
-                        i === index ? { ...item, status: 'completed', progress: 100 } : item
-                      )
-                    }));
-                    resolve(response.data.url);
-                  } else {
-                    setUploadProgress(prev => ({
-                      ...prev,
-                      [version.id]: (prev[version.id] || []).map((item, i) => 
-                        i === index ? { ...item, status: 'error' } : item
-                      )
-                    }));
-                    resolve(null);
-                  }
-                } else {
-                  setUploadProgress(prev => ({
-                    ...prev,
-                    [version.id]: (prev[version.id] || []).map((item, i) => 
-                      i === index ? { ...item, status: 'error' } : item
-                    )
-                  }));
-                  resolve(null);
-                }
-              };
+      xhr.onload = () => {
+        if (xhr.status === 200) {
+          try {
+            const response = JSON.parse(xhr.responseText);
+            if (response.data && response.data.url) {
+              versionImages[index] = response.data.url;
+              setUploadProgress(prev => ({
+                ...prev,
+                [version.id]: (prev[version.id] || []).map((item, i) =>
+                  i === index ? { ...item, status: 'completed', progress: 100 } : item
+                )
+              }));
+              resolve(response.data.url);
+              return;
+            }
+          } catch (e) {}
+        }
+        setUploadProgress(prev => ({
+          ...prev,
+          [version.id]: (prev[version.id] || []).map((item, i) =>
+            i === index ? { ...item, status: 'error' } : item
+          )
+        }));
+        resolve(null);
+      };
 
-              xhr.onerror = () => {
-                setUploadProgress(prev => ({
-                  ...prev,
-                  [version.id]: (prev[version.id] || []).map((item, i) => 
-                    i === index ? { ...item, status: 'error' } : item
-                  )
-                }));
-                resolve(null);
-              };
+      xhr.onerror = () => {
+        setUploadProgress(prev => ({
+          ...prev,
+          [version.id]: (prev[version.id] || []).map((item, i) =>
+            i === index ? { ...item, status: 'error' } : item
+          )
+        }));
+        resolve(null);
+      };
 
-              xhr.open('POST', API_CONFIG.IMGBB.BASE_URL);
-              xhr.send(formData);
-            });
-          });
+      xhr.open('POST', API_CONFIG.IMGBB.BASE_URL);
+      xhr.send(formData);
+    });
+  }
 
-          const uploadedUrls = await Promise.all(uploadPromises);
+const uploadedUrls = versionImages;
+
           const validUrls = uploadedUrls.filter((url): url is string => url !== null);
           
           updatedVersions.push({
@@ -908,7 +905,7 @@ export default function MangaForm({
                       </h5>
                       <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2">
                         {selectedImages[version.id].map((file, index) => {
-                          const previewUrl = URL.createObjectURL(file);
+                          const previewUrl = (file instanceof File ? (file instanceof File ? URL.createObjectURL(file) : file) : file);
                           const isSelectedAsCover = coverImagePreview === previewUrl || (selectedCoverPageIndex?.versionId === version.id && selectedCoverPageIndex?.pageIndex === -1 && coverImageFile === file);
 
                           return (
